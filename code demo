@@ -1,0 +1,160 @@
+using UnityEngine;
+using System.Collections.Generic;
+
+public class GameManager : MonoBehaviour
+{
+    // === Player Setup ===
+    public enum Avatar { Kael, Lyra }
+    public Avatar selectedAvatar = Avatar.Kael;
+
+    public float moveSpeed = 5f;
+    public float jumpForce = 7f;
+    public float dashForce = 10f;
+    public float dashCooldown = 2f;
+    private float lastDashTime;
+    private Rigidbody2D rb;
+    private bool isGrounded;
+
+    // === Instinct System ===
+    public enum InstinctTier { Raw, Imprinted, Sworn, Fractured, Legacy }
+
+    [System.Serializable]
+    public class Instinct
+    {
+        public string name;
+        public InstinctTier tier = InstinctTier.Raw;
+        public float cooldown = 2f;
+        public float lastUsed = -999f;
+
+        public void Activate(GameObject player)
+        {
+            if (Time.time - lastUsed < cooldown) return;
+
+            if (name == "Dash")
+            {
+                Rigidbody2D rb = player.GetComponent<Rigidbody2D>();
+                Vector2 dir = new Vector2(player.transform.localScale.x, 0);
+                rb.AddForce(dir * (4f + (int)tier * 2f), ForceMode2D.Impulse);
+            }
+
+            lastUsed = Time.time;
+            Debug.Log($"Activated {name} at tier {tier}");
+        }
+
+        public void Evolve()
+        {
+            if ((int)tier < 4) tier++;
+        }
+    }
+
+    public List<Instinct> equippedInstincts = new List<Instinct>(5);
+
+    // === Bond System ===
+    private HashSet<string> bondedPlayers = new HashSet<string>();
+    private HashSet<string> rivalPlayers = new HashSet<string>();
+
+    public void FormBond(string playerId)
+    {
+        bondedPlayers.Add(playerId);
+        Debug.Log("Bond formed with: " + playerId);
+    }
+
+    public void BreakBond(string playerId)
+    {
+        if (bondedPlayers.Contains(playerId))
+        {
+            bondedPlayers.Remove(playerId);
+            rivalPlayers.Add(playerId);
+            Debug.Log("Bond broken! " + playerId + " is now your rival!");
+        }
+    }
+
+    // === Reward Container ===
+    public enum ContainerTier { Basic, Advanced, Legacy }
+    public ContainerTier containerTier = ContainerTier.Basic;
+    public int loot = 0;
+    public int instinctXP = 0;
+
+    public void UpgradeContainer()
+    {
+        if (containerTier == ContainerTier.Basic) containerTier = ContainerTier.Advanced;
+        else if (containerTier == ContainerTier.Advanced) containerTier = ContainerTier.Legacy;
+        Debug.Log("Container upgraded to: " + containerTier);
+    }
+
+    public void LoseContainer()
+    {
+        loot = 0;
+        instinctXP = 0;
+        containerTier = ContainerTier.Basic;
+        Debug.Log("Container destroyed. Loot & XP lost.");
+    }
+
+    // === Shrinking Zone ===
+    public Transform zone;
+    public float shrinkRate = 0.5f;
+    public float minZoneSize = 2f;
+
+    // === UNITY FUNCTIONS ===
+    void Start()
+    {
+        rb = GetComponent<Rigidbody2D>();
+
+        // Load test instinct
+        equippedInstincts.Add(new Instinct { name = "Dash", cooldown = 2f });
+
+        Debug.Log("Game Started with Avatar: " + selectedAvatar);
+    }
+
+    void Update()
+    {
+        HandleMovement();
+        HandleInstincts();
+        ShrinkZone();
+    }
+
+    void HandleMovement()
+    {
+        float x = Input.GetAxis("Horizontal");
+        rb.velocity = new Vector2(x * moveSpeed, rb.velocity.y);
+
+        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, jumpForce);
+            isGrounded = false;
+        }
+
+        if (Input.GetKeyDown(KeyCode.LeftShift) && Time.time - lastDashTime >= dashCooldown)
+        {
+            Vector2 dir = new Vector2(transform.localScale.x, 0);
+            rb.AddForce(dir * dashForce, ForceMode2D.Impulse);
+            lastDashTime = Time.time;
+        }
+    }
+
+    void OnCollisionEnter2D(Collision2D col)
+    {
+        if (col.contacts[0].normal.y > 0.5f)
+            isGrounded = true;
+    }
+
+    void HandleInstincts()
+    {
+        for (int i = 0; i < equippedInstincts.Count; i++)
+        {
+            if (Input.GetKeyDown(KeyCode.Alpha1 + i))
+            {
+                equippedInstincts[i].Activate(gameObject);
+            }
+        }
+    }
+
+    void ShrinkZone()
+    {
+        if (zone != null && zone.localScale.x > minZoneSize)
+        {
+            float shrinkAmount = shrinkRate * Time.deltaTime;
+            zone.localScale -= new Vector3(shrinkAmount, shrinkAmount, 0f);
+        }
+    }
+}
